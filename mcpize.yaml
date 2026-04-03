@@ -3,7 +3,7 @@ display_name: "Stripe Complete"
 description: "Complete Stripe MCP server. Manage payments, subscriptions, customers, invoices, and revenue reporting — all from your AI assistant."
 tagline: "Stop copying Stripe data into spreadsheets."
 version: 1
-runtime: typescript
+runtime: node
 env:
   - name: STRIPE_SECRET_KEY
     description: Stripe secret API key (sk_live_... or sk_test_...)
