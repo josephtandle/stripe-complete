@@ -4,11 +4,11 @@
  * Manages payments, subscriptions, customers, invoices, and revenue reporting.
  */
 
-const express = require("express");
-const fetch = require("node-fetch");
-const { McpServer } = require("@modelcontextprotocol/sdk/server/mcp.js");
-const { StreamableHTTPServerTransport } = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
-const { z } = require("zod");
+import express from "express";
+import nodeFetch from "node-fetch";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { z } from "zod";
 
 const PORT = process.env.PORT || 8080;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
@@ -18,28 +18,28 @@ const STRIPE_BASE = "https://api.stripe.com/v1";
 // Stripe HTTP helper
 // ---------------------------------------------------------------------------
 
-function stripeAuth() {
+function stripeAuth(): string {
   const key = STRIPE_SECRET_KEY;
   if (!key) throw new Error("STRIPE_SECRET_KEY environment variable is not set");
   return "Basic " + Buffer.from(key + ":").toString("base64");
 }
 
-async function stripeGet(path, params = {}) {
+async function stripeGet(path: string, params: Record<string, any> = {}): Promise<any> {
   const url = new URL(STRIPE_BASE + path);
   Object.entries(params).forEach(([k, v]) => {
     if (v !== undefined && v !== null) url.searchParams.append(k, String(v));
   });
-  const res = await fetch(url.toString(), {
+  const res = await nodeFetch(url.toString(), {
     headers: { Authorization: stripeAuth() },
   });
-  const data = await res.json();
+  const data = await res.json() as any;
   if (!res.ok) throw new Error(data?.error?.message || `Stripe error ${res.status}`);
   return data;
 }
 
-async function stripePost(path, body = {}) {
+async function stripePost(path: string, body: Record<string, any> = {}): Promise<any> {
   const params = new URLSearchParams();
-  function flatten(obj, prefix = "") {
+  function flatten(obj: Record<string, any>, prefix = "") {
     for (const [k, v] of Object.entries(obj)) {
       if (v === undefined || v === null) continue;
       const key = prefix ? `${prefix}[${k}]` : k;
@@ -51,7 +51,7 @@ async function stripePost(path, body = {}) {
     }
   }
   flatten(body);
-  const res = await fetch(STRIPE_BASE + path, {
+  const res = await nodeFetch(STRIPE_BASE + path, {
     method: "POST",
     headers: {
       Authorization: stripeAuth(),
@@ -59,17 +59,17 @@ async function stripePost(path, body = {}) {
     },
     body: params.toString(),
   });
-  const data = await res.json();
+  const data = await res.json() as any;
   if (!res.ok) throw new Error(data?.error?.message || `Stripe error ${res.status}`);
   return data;
 }
 
-async function stripeDelete(path) {
-  const res = await fetch(STRIPE_BASE + path, {
+async function stripeDelete(path: string): Promise<any> {
+  const res = await nodeFetch(STRIPE_BASE + path, {
     method: "DELETE",
     headers: { Authorization: stripeAuth() },
   });
-  const data = await res.json();
+  const data = await res.json() as any;
   if (!res.ok) throw new Error(data?.error?.message || `Stripe error ${res.status}`);
   return data;
 }
@@ -99,7 +99,7 @@ server.tool(
     metadata: z.record(z.string()).optional().describe("Key-value metadata to attach. Example: {order_id: 'ord_123'}"),
   },
   async ({ amount, currency, customer, description, payment_method_types, metadata }) => {
-    const body = { amount, currency };
+    const body: Record<string, any> = { amount, currency };
     if (customer) body.customer = customer;
     if (description) body.description = description;
     if (metadata) Object.entries(metadata).forEach(([k, v]) => { body[`metadata[${k}]`] = v; });
@@ -107,7 +107,7 @@ server.tool(
       payment_method_types.forEach((pm, i) => { body[`payment_method_types[${i}]`] = pm; });
     }
     const pi = await stripePost("/payment_intents", body);
-    return { content: [{ type: "text", text: JSON.stringify(pi, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(pi, null, 2) }] };
   }
 );
 
@@ -120,11 +120,11 @@ server.tool(
     return_url: z.string().optional().describe("URL to redirect after 3DS authentication"),
   },
   async ({ payment_intent_id, payment_method, return_url }) => {
-    const body = {};
+    const body: Record<string, any> = {};
     if (payment_method) body.payment_method = payment_method;
     if (return_url) body.return_url = return_url;
     const pi = await stripePost(`/payment_intents/${payment_intent_id}/confirm`, body);
-    return { content: [{ type: "text", text: JSON.stringify(pi, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(pi, null, 2) }] };
   }
 );
 
@@ -137,10 +137,10 @@ server.tool(
       .describe("Why the payment is being cancelled"),
   },
   async ({ payment_intent_id, cancellation_reason }) => {
-    const body = {};
+    const body: Record<string, any> = {};
     if (cancellation_reason) body.cancellation_reason = cancellation_reason;
     const pi = await stripePost(`/payment_intents/${payment_intent_id}/cancel`, body);
-    return { content: [{ type: "text", text: JSON.stringify(pi, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(pi, null, 2) }] };
   }
 );
 
@@ -150,14 +150,14 @@ server.tool(
   {
     customer: z.string().optional().describe("Filter by customer ID. Example: 'cus_abc123'"),
     limit: z.number().int().min(1).max(100).default(20).describe("Number of results (1-100). Default: 20"),
-    starting_after: z.string().optional().describe("Cursor for pagination — ID of last item from previous page"),
+    starting_after: z.string().optional().describe("Cursor for pagination"),
   },
   async ({ customer, limit, starting_after }) => {
-    const params = { limit };
+    const params: Record<string, any> = { limit };
     if (customer) params.customer = customer;
     if (starting_after) params.starting_after = starting_after;
     const result = await stripeGet("/payment_intents", params);
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 
@@ -176,14 +176,14 @@ server.tool(
     metadata: z.record(z.string()).optional().describe("Key-value metadata. Example: {plan: 'enterprise', source: 'website'}"),
   },
   async ({ email, name, phone, description, metadata }) => {
-    const body = {};
+    const body: Record<string, any> = {};
     if (email) body.email = email;
     if (name) body.name = name;
     if (phone) body.phone = phone;
     if (description) body.description = description;
     if (metadata) Object.entries(metadata).forEach(([k, v]) => { body[`metadata[${k}]`] = v; });
     const customer = await stripePost("/customers", body);
-    return { content: [{ type: "text", text: JSON.stringify(customer, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(customer, null, 2) }] };
   }
 );
 
@@ -195,7 +195,7 @@ server.tool(
   },
   async ({ customer_id }) => {
     const customer = await stripeGet(`/customers/${customer_id}`);
-    return { content: [{ type: "text", text: JSON.stringify(customer, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(customer, null, 2) }] };
   }
 );
 
@@ -211,31 +211,31 @@ server.tool(
     metadata: z.record(z.string()).optional().describe("Key-value metadata to set/update"),
   },
   async ({ customer_id, email, name, phone, description, metadata }) => {
-    const body = {};
+    const body: Record<string, any> = {};
     if (email) body.email = email;
     if (name) body.name = name;
     if (phone) body.phone = phone;
     if (description) body.description = description;
     if (metadata) Object.entries(metadata).forEach(([k, v]) => { body[`metadata[${k}]`] = v; });
     const customer = await stripePost(`/customers/${customer_id}`, body);
-    return { content: [{ type: "text", text: JSON.stringify(customer, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(customer, null, 2) }] };
   }
 );
 
 server.tool(
   "list_customers",
-  "List Stripe customers, optionally filtered by email. Example: find all customers with email containing @acme.com.",
+  "List Stripe customers, optionally filtered by email. Example: find all customers with a specific email address.",
   {
     email: z.string().optional().describe("Filter by exact email address"),
     limit: z.number().int().min(1).max(100).default(20).describe("Number of results (1-100). Default: 20"),
     starting_after: z.string().optional().describe("Cursor for pagination"),
   },
   async ({ email, limit, starting_after }) => {
-    const params = { limit };
+    const params: Record<string, any> = { limit };
     if (email) params.email = email;
     if (starting_after) params.starting_after = starting_after;
     const result = await stripeGet("/customers", params);
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 
@@ -247,7 +247,7 @@ server.tool(
   },
   async ({ customer_id }) => {
     const result = await stripeDelete(`/customers/${customer_id}`);
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 
@@ -267,7 +267,7 @@ server.tool(
     metadata: z.record(z.string()).optional().describe("Key-value metadata"),
   },
   async ({ customer, price_id, quantity, trial_period_days, coupon, metadata }) => {
-    const body = {
+    const body: Record<string, any> = {
       customer,
       "items[0][price]": price_id,
       "items[0][quantity]": quantity,
@@ -276,7 +276,7 @@ server.tool(
     if (coupon) body.coupon = coupon;
     if (metadata) Object.entries(metadata).forEach(([k, v]) => { body[`metadata[${k}]`] = v; });
     const sub = await stripePost("/subscriptions", body);
-    return { content: [{ type: "text", text: JSON.stringify(sub, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(sub, null, 2) }] };
   }
 );
 
@@ -292,24 +292,21 @@ server.tool(
     metadata: z.record(z.string()).optional().describe("Key-value metadata to update"),
   },
   async ({ subscription_id, price_id, quantity, coupon, cancel_at_period_end, metadata }) => {
-    // First get the subscription to find the item ID if we need to change the price
-    const body = {};
+    const body: Record<string, any> = {};
     if (price_id || quantity !== undefined) {
       const existing = await stripeGet(`/subscriptions/${subscription_id}`);
       const itemId = existing.items?.data?.[0]?.id;
       if (itemId) {
-        if (price_id) body[`items[0][id]`] = itemId, body[`items[0][price]`] = price_id;
-        if (quantity !== undefined) {
-          body[`items[0][id]`] = itemId;
-          body[`items[0][quantity]`] = quantity;
-        }
+        body[`items[0][id]`] = itemId;
+        if (price_id) body[`items[0][price]`] = price_id;
+        if (quantity !== undefined) body[`items[0][quantity]`] = quantity;
       }
     }
     if (coupon) body.coupon = coupon;
     if (cancel_at_period_end !== undefined) body.cancel_at_period_end = cancel_at_period_end;
     if (metadata) Object.entries(metadata).forEach(([k, v]) => { body[`metadata[${k}]`] = v; });
     const sub = await stripePost(`/subscriptions/${subscription_id}`, body);
-    return { content: [{ type: "text", text: JSON.stringify(sub, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(sub, null, 2) }] };
   }
 );
 
@@ -321,13 +318,13 @@ server.tool(
     at_period_end: z.boolean().default(false).describe("If true, cancel at end of billing period. If false, cancel immediately. Default: false"),
   },
   async ({ subscription_id, at_period_end }) => {
-    let result;
+    let result: any;
     if (at_period_end) {
       result = await stripePost(`/subscriptions/${subscription_id}`, { cancel_at_period_end: true });
     } else {
       result = await stripeDelete(`/subscriptions/${subscription_id}`);
     }
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 
@@ -342,12 +339,12 @@ server.tool(
     starting_after: z.string().optional().describe("Cursor for pagination"),
   },
   async ({ customer, status, limit, starting_after }) => {
-    const params = { limit };
+    const params: Record<string, any> = { limit };
     if (customer) params.customer = customer;
     if (status && status !== "all") params.status = status;
     if (starting_after) params.starting_after = starting_after;
     const result = await stripeGet("/subscriptions", params);
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 
@@ -368,12 +365,12 @@ server.tool(
     metadata: z.record(z.string()).optional().describe("Key-value metadata"),
   },
   async ({ customer, description, auto_advance, collection_method, days_until_due, metadata }) => {
-    const body = { customer, auto_advance, collection_method };
+    const body: Record<string, any> = { customer, auto_advance, collection_method };
     if (description) body.description = description;
     if (days_until_due) body.days_until_due = days_until_due;
     if (metadata) Object.entries(metadata).forEach(([k, v]) => { body[`metadata[${k}]`] = v; });
     const invoice = await stripePost("/invoices", body);
-    return { content: [{ type: "text", text: JSON.stringify(invoice, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(invoice, null, 2) }] };
   }
 );
 
@@ -385,7 +382,7 @@ server.tool(
   },
   async ({ invoice_id }) => {
     const result = await stripePost(`/invoices/${invoice_id}/send`);
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 
@@ -399,12 +396,12 @@ server.tool(
     starting_after: z.string().optional().describe("Cursor for pagination"),
   },
   async ({ customer, status, limit, starting_after }) => {
-    const params = { limit };
+    const params: Record<string, any> = { limit };
     if (customer) params.customer = customer;
     if (status) params.status = status;
     if (starting_after) params.starting_after = starting_after;
     const result = await stripeGet("/invoices", params);
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 
@@ -416,7 +413,7 @@ server.tool(
   },
   async ({ invoice_id }) => {
     const invoice = await stripeGet(`/invoices/${invoice_id}`);
-    return { content: [{ type: "text", text: JSON.stringify(invoice, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(invoice, null, 2) }] };
   }
 );
 
@@ -428,10 +425,10 @@ server.tool(
     payment_method: z.string().optional().describe("Payment method ID to use. Uses customer default if not provided"),
   },
   async ({ invoice_id, payment_method }) => {
-    const body = {};
+    const body: Record<string, any> = {};
     if (payment_method) body.payment_method = payment_method;
     const result = await stripePost(`/invoices/${invoice_id}/pay`, body);
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 
@@ -444,24 +441,24 @@ server.tool(
   "Create a discount coupon. Example: create SUMMER25 coupon for 25% off, valid forever, max 100 redemptions.",
   {
     name: z.string().describe("Human-readable coupon name. Example: 'SUMMER25'"),
-    duration: z.enum(["once", "repeating", "forever"]).describe("How long the discount applies: once (one payment), repeating (N months), forever"),
-    percent_off: z.number().min(0.01).max(100).optional().describe("Percentage discount. Example: 25 for 25% off. Cannot use with amount_off"),
-    amount_off: z.number().int().positive().optional().describe("Fixed discount in smallest currency unit. Example: 500 = $5.00. Cannot use with percent_off"),
+    duration: z.enum(["once", "repeating", "forever"]).describe("How long the discount applies"),
+    percent_off: z.number().min(0.01).max(100).optional().describe("Percentage discount. Example: 25 for 25% off"),
+    amount_off: z.number().int().positive().optional().describe("Fixed discount in smallest currency unit. Example: 500 = $5.00"),
     currency: z.string().min(3).max(3).optional().describe("Required if amount_off is set. Example: 'usd'"),
-    duration_in_months: z.number().int().positive().optional().describe("Required if duration=repeating. Number of months discount applies"),
-    max_redemptions: z.number().int().positive().optional().describe("Limit total redemptions. Example: 100"),
-    redeem_by: z.number().int().optional().describe("Unix timestamp expiry. Example: 1735689600 for Jan 1 2025"),
+    duration_in_months: z.number().int().positive().optional().describe("Required if duration=repeating"),
+    max_redemptions: z.number().int().positive().optional().describe("Limit total redemptions"),
+    redeem_by: z.number().int().optional().describe("Unix timestamp expiry"),
   },
   async ({ name, duration, percent_off, amount_off, currency, duration_in_months, max_redemptions, redeem_by }) => {
     if (!percent_off && !amount_off) throw new Error("Either percent_off or amount_off is required");
-    const body = { name, duration };
+    const body: Record<string, any> = { name, duration };
     if (percent_off) body.percent_off = percent_off;
     if (amount_off) { body.amount_off = amount_off; body.currency = currency || "usd"; }
     if (duration_in_months) body.duration_in_months = duration_in_months;
     if (max_redemptions) body.max_redemptions = max_redemptions;
     if (redeem_by) body.redeem_by = redeem_by;
     const coupon = await stripePost("/coupons", body);
-    return { content: [{ type: "text", text: JSON.stringify(coupon, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(coupon, null, 2) }] };
   }
 );
 
@@ -473,10 +470,10 @@ server.tool(
     starting_after: z.string().optional().describe("Cursor for pagination"),
   },
   async ({ limit, starting_after }) => {
-    const params = { limit };
+    const params: Record<string, any> = { limit };
     if (starting_after) params.starting_after = starting_after;
     const result = await stripeGet("/coupons", params);
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 
@@ -488,7 +485,7 @@ server.tool(
   },
   async ({ coupon_id }) => {
     const result = await stripeDelete(`/coupons/${coupon_id}`);
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 
@@ -501,13 +498,13 @@ server.tool(
     coupon: z.string().describe("Coupon ID to apply. Example: 'SUMMER25'"),
   },
   async ({ target_type, target_id, coupon }) => {
-    let result;
+    let result: any;
     if (target_type === "customer") {
       result = await stripePost(`/customers/${target_id}`, { coupon });
     } else {
       result = await stripePost(`/subscriptions/${target_id}`, { coupon });
     }
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 
@@ -522,11 +519,11 @@ server.tool(
     active: z.boolean().default(true).describe("Whether the promo code is active. Default: true"),
   },
   async ({ coupon, code, max_redemptions, expires_at, active }) => {
-    const body = { coupon, code, active };
+    const body: Record<string, any> = { coupon, code, active };
     if (max_redemptions) body.max_redemptions = max_redemptions;
     if (expires_at) body.expires_at = expires_at;
     const result = await stripePost("/promotion_codes", body);
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 
@@ -544,11 +541,11 @@ server.tool(
     metadata: z.record(z.string()).optional().describe("Key-value metadata"),
   },
   async ({ name, description, active, metadata }) => {
-    const body = { name, active };
+    const body: Record<string, any> = { name, active };
     if (description) body.description = description;
     if (metadata) Object.entries(metadata).forEach(([k, v]) => { body[`metadata[${k}]`] = v; });
     const product = await stripePost("/products", body);
-    return { content: [{ type: "text", text: JSON.stringify(product, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(product, null, 2) }] };
   }
 );
 
@@ -566,14 +563,14 @@ server.tool(
     nickname: z.string().optional().describe("Internal nickname for this price. Example: 'Pro Monthly'"),
   },
   async ({ product, unit_amount, currency, recurring_interval, recurring_interval_count, nickname }) => {
-    const body = { product, unit_amount, currency };
+    const body: Record<string, any> = { product, unit_amount, currency };
     if (recurring_interval) {
       body["recurring[interval]"] = recurring_interval;
       body["recurring[interval_count]"] = recurring_interval_count || 1;
     }
     if (nickname) body.nickname = nickname;
     const price = await stripePost("/prices", body);
-    return { content: [{ type: "text", text: JSON.stringify(price, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(price, null, 2) }] };
   }
 );
 
@@ -586,11 +583,11 @@ server.tool(
     starting_after: z.string().optional().describe("Cursor for pagination"),
   },
   async ({ active, limit, starting_after }) => {
-    const params = { limit };
+    const params: Record<string, any> = { limit };
     if (active !== undefined) params.active = active;
     if (starting_after) params.starting_after = starting_after;
     const result = await stripeGet("/products", params);
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 
@@ -604,12 +601,12 @@ server.tool(
     starting_after: z.string().optional().describe("Cursor for pagination"),
   },
   async ({ product, active, limit, starting_after }) => {
-    const params = { limit };
+    const params: Record<string, any> = { limit };
     if (product) params.product = product;
     if (active !== undefined) params.active = active;
     if (starting_after) params.starting_after = starting_after;
     const result = await stripeGet("/prices", params);
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 
@@ -629,14 +626,14 @@ server.tool(
   },
   async ({ charge, payment_intent, amount, reason, metadata }) => {
     if (!charge && !payment_intent) throw new Error("Either charge or payment_intent is required");
-    const body = {};
+    const body: Record<string, any> = {};
     if (charge) body.charge = charge;
     if (payment_intent) body.payment_intent = payment_intent;
     if (amount) body.amount = amount;
     if (reason) body.reason = reason;
     if (metadata) Object.entries(metadata).forEach(([k, v]) => { body[`metadata[${k}]`] = v; });
     const refund = await stripePost("/refunds", body);
-    return { content: [{ type: "text", text: JSON.stringify(refund, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(refund, null, 2) }] };
   }
 );
 
@@ -649,11 +646,11 @@ server.tool(
     starting_after: z.string().optional().describe("Cursor for pagination"),
   },
   async ({ charge, limit, starting_after }) => {
-    const params = { limit };
+    const params: Record<string, any> = { limit };
     if (charge) params.charge = charge;
     if (starting_after) params.starting_after = starting_after;
     const result = await stripeGet("/refunds", params);
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 
@@ -667,7 +664,7 @@ server.tool(
   {},
   async () => {
     const balance = await stripeGet("/balance");
-    return { content: [{ type: "text", text: JSON.stringify(balance, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(balance, null, 2) }] };
   }
 );
 
@@ -682,33 +679,33 @@ server.tool(
     starting_after: z.string().optional().describe("Cursor for pagination"),
   },
   async ({ type, limit, created_after, starting_after }) => {
-    const params = { limit };
+    const params: Record<string, any> = { limit };
     if (type) params.type = type;
     if (created_after) params["created[gte]"] = created_after;
     if (starting_after) params.starting_after = starting_after;
     const result = await stripeGet("/balance_transactions", params);
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 
 server.tool(
   "create_report_run",
-  "Kick off a Stripe Sigma report run and get the download URL when complete. Example: run a monthly revenue report for March 2024.",
+  "Kick off a Stripe Sigma report run. Example: run a monthly revenue report for March 2024.",
   {
-    report_type: z.string().describe("Report type ID. Example: 'balance.summary.1', 'activity.summary.1', 'payouts.itemized.3'"),
+    report_type: z.string().describe("Report type ID. Example: 'balance.summary.1', 'activity.summary.1'"),
     interval_start: z.number().int().describe("Report period start as Unix timestamp. Example: 1709251200 for March 1, 2024"),
     interval_end: z.number().int().describe("Report period end as Unix timestamp. Example: 1711929600 for April 1, 2024"),
-    timezone: z.string().default("Etc/UTC").describe("Timezone for report. Default: 'Etc/UTC'. Example: 'America/New_York'"),
+    timezone: z.string().default("Etc/UTC").describe("Timezone for report. Default: 'Etc/UTC'"),
   },
   async ({ report_type, interval_start, interval_end, timezone }) => {
-    const body = {
+    const body: Record<string, any> = {
       report_type,
       "parameters[interval_start]": interval_start,
       "parameters[interval_end]": interval_end,
       "parameters[timezone]": timezone,
     };
     const run = await stripePost("/reporting/report_runs", body);
-    return { content: [{ type: "text", text: JSON.stringify(run, null, 2) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(run, null, 2) }] };
   }
 );
 
@@ -724,7 +721,7 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", server: "stripe-complete", version: "1.0.0" });
 });
 
-// MCP endpoint — stateless, one transport per request
+// MCP endpoint
 app.all("/mcp", async (req, res) => {
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
